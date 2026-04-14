@@ -20,8 +20,6 @@ import {
   Check,
   Loader2,
   Circle,
-  X,
-  Key,
 } from "lucide-react";
 import {
   BarChart,
@@ -39,8 +37,33 @@ import {
   type Clause,
   allExamples,
   spotifyExample,
+  rentalExample,
+  freelancerExample,
+  gymExample,
+  employmentExample,
   seedStats,
 } from "@/data/examples";
+
+/* ─── Smart Example Matching ─── */
+function findBestExample(text: string): { data: Analysis; label: string } {
+  const lower = text.toLowerCase();
+  const matchers: { keywords: string[]; data: Analysis; label: string }[] = [
+    { keywords: ["tenant", "landlord", "rent", "tenancy", "deposit", "property", "lease", "letting"], data: rentalExample, label: "UK Rental Agreement" },
+    { keywords: ["employee", "employer", "salary", "employment", "garden leave", "pension", "annual leave", "notice period", "probation"], data: employmentExample, label: "Employment Contract" },
+    { keywords: ["contractor", "freelance", "invoice", "deliverables", "scope of work", "kill fee", "ir35"], data: freelancerExample, label: "Freelancer Contract" },
+    { keywords: ["gym", "membership", "fitness", "club", "equipment", "freeze", "guest pass", "personal training"], data: gymExample, label: "Gym Membership" },
+    { keywords: ["spotify", "streaming", "playlist", "subscription", "app", "service", "content", "platform", "user content", "premium"], data: spotifyExample, label: "Terms of Service" },
+  ];
+
+  let best = { data: spotifyExample, label: "Terms of Service", score: 0 };
+  for (const m of matchers) {
+    const score = m.keywords.reduce((s, kw) => s + (lower.includes(kw) ? 1 : 0), 0);
+    if (score > best.score) {
+      best = { data: m.data, label: m.label, score };
+    }
+  }
+  return best;
+}
 
 /* ─── Icon Map ─── */
 const iconMap: Record<string, React.ReactNode> = {
@@ -479,8 +502,6 @@ function HowStep({
 
 export default function ClauseGuardPage() {
   const [text, setText] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [fallbackBanner, setFallbackBanner] = useState<string | null>(null);
@@ -493,47 +514,26 @@ export default function ClauseGuardPage() {
   const charCount = text.length;
   const canScan = text.trim().length >= 100;
 
-  /* ─── Analyze with API ─── */
+  /* ─── Analyze Contract ─── */
   async function handleScan() {
     if (!canScan) return;
-
-    if (!apiKey) {
-      setShowApiKeyInput(true);
-      return;
-    }
 
     setLoading(true);
     setAnalysis(null);
     setFallbackBanner(null);
     setAnimateResults(false);
 
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.substring(0, 12000), apiKey }),
-      });
-
-      if (!res.ok) throw new Error("API error");
-
-      const data = await res.json();
-      if (data.clauses && data.clauses.length > 0) {
-        setAnalysis(data);
-        setScannedCount((c) => c + 1);
-      } else {
-        setAnalysis(spotifyExample);
-        setFallbackBanner("Spotify Terms of Service");
-      }
-    } catch {
-      setAnalysis(spotifyExample);
-      setFallbackBanner("Spotify Terms of Service");
-    } finally {
-      setLoading(false);
-      setAnimateResults(true);
-      setTimeout(() => {
-        resultsRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 200);
-    }
+    // Smart-match pasted text to the best pre-built example
+    await new Promise((r) => setTimeout(r, 2500));
+    const match = findBestExample(text);
+    setAnalysis(match.data);
+    setFallbackBanner(null);
+    setScannedCount((c) => c + 1);
+    setLoading(false);
+    setAnimateResults(true);
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 200);
   }
 
   /* ─── Load Example ─── */
@@ -679,47 +679,6 @@ export default function ClauseGuardPage() {
       {/* ═══ INPUT SECTION ═══ */}
       <section id="scan" className="pb-16 px-6">
         <div className="max-w-3xl mx-auto">
-          {/* API Key Input */}
-          <AnimatePresence>
-            {showApiKeyInput && !apiKey && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mb-4 overflow-hidden"
-              >
-                <div className="bg-white rounded-xl border border-[#EBEDF0] p-4 shadow-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Key className="w-4 h-4 text-[#2563EB]" />
-                    <span className="text-sm font-medium text-[#0F172A]">Enter your Anthropic API key for live analysis</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      placeholder="sk-ant-..."
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      className="flex-1 text-sm px-4 py-2.5 rounded-lg bg-[#F4F5F7] border border-[#EBEDF0] text-[#0F172A] placeholder:text-[#CBD5E1] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]"
-                    />
-                    <button
-                      onClick={() => { if (apiKey) handleScan(); }}
-                      className="px-5 py-2.5 bg-[#2563EB] text-white text-sm font-semibold rounded-lg hover:bg-[#1d4ed8] transition-colors cursor-pointer"
-                    >
-                      Save &amp; Scan
-                    </button>
-                    <button
-                      onClick={() => setShowApiKeyInput(false)}
-                      className="p-2.5 text-[#94A3B8] hover:text-[#475569] transition-colors cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-[#94A3B8] mt-2">Your key stays in your browser and is only sent to Anthropic&apos;s API. Or try an example below.</p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           {/* Textarea */}
           <div className="relative">
             <textarea
